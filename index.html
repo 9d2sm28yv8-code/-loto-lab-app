@@ -148,7 +148,7 @@ header,main{padding-left:calc(20px + env(safe-area-inset-left));padding-right:ca
  <div class="grid md:grid-cols-2 gap-5">
   <div class="surface p-5 md:p-7">
    <h3 class="t2 mb-3">Aggiungi un alimento</h3>
-   <div class="notice mb-4"><strong>Fonti:</strong> i dati manuali restano distinti da quelli di Open Food Facts; ogni voce riporta la sua origine. Verifica sempre i valori sull’etichetta.</div>
+   <div class="notice mb-4"><strong>Fonti:</strong> i dati manuali restano distinti da quelli di Open Food Facts; ogni voce riporta la sua origine. Banca dati principale: Tabelle di composizione degli alimenti del CREA (Centro di ricerca Alimenti e Nutrizione). Verifica sempre i valori sull’etichetta.</div>
    <div class="grid sm:grid-cols-2 gap-3 mb-4">
     <div>
      <label for="food-search" class="field-label">Cerca per nome o codice a barre</label>
@@ -510,11 +510,21 @@ async function offSearch(q){
  if(reasons.every(x=>x.endsWith('nessun risultato')))return [];
  const err=new Error(reasons.join(' · '));throw err;
 }
+let FOODDB=[];
+const normTxt=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+fetch('alimenti.json').then(r=>r.ok?r.json():[]).then(d=>{FOODDB=Array.isArray(d)?d:[]}).catch(()=>{});
 async function searchByName(q){
  q=String(q||'').trim();const res=$('food-search-results');
  if(/^\d{8,14}$/.test(q))return searchBarcode(q);
  res.replaceChildren();if(q.length<3)return;
  const ql=q.toLowerCase();
+ const toks=normTxt(q).split(/\s+/).filter(Boolean);
+ const nd=v=>v===null||v===undefined?'n.d.':v;
+ const own=FOODDB.map(x=>{const nm=normTxt(x.n),nn=nm+' '+normTxt(x.a||'');if(!toks.every(t=>nn.includes(t)))return null;return {x,s:(nm.startsWith(toks[0])?0:1)*1000+x.n.length}}).filter(Boolean).sort((u,w)=>u.s-w.s).slice(0,12).map(o=>o.x);
+ if(own.length){
+  const h0=document.createElement('p');h0.className='mini';h0.textContent='Tabella CREA (banca dati principale):';res.append(h0);
+  own.forEach(x=>addResult(res,x.n,`${x.k} kcal · P ${nd(x.p)} · C ${nd(x.c)} · G ${nd(x.g)} per 100 g${x.pt?' · porzione CREA '+x.pt+' g':''}`,()=>{fillProduct(x.n,{kcal:x.k,protein:x.p,carbs:x.c,fat:x.g,fiber:x.f},'','Tabella CREA (cod. '+x.cod+')');res.textContent='Alimento trasferito nel modulo (valori per 100 g di parte edibile). Indica i grammi e salva.'}));
+ }
  const loc=Object.values(state.products).filter(p=>p.name.toLowerCase().includes(ql)).sort((a,b)=>b.ts-a.ts).slice(0,5);
  if(loc.length){
   const h=document.createElement('p');h.className='mini';h.textContent='Già usati da te:';res.append(h);
