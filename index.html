@@ -79,7 +79,8 @@ header,main{padding-left:calc(20px + env(safe-area-inset-left));padding-right:ca
   <div class="surface p-5"><h3 class="t2">Alimentazione oggi</h3><p id="home-food-summary" class="mt-2 mini"></p></div>
   <div class="surface p-5"><h3 class="t2">Movimento oggi</h3><p id="home-activity" class="mt-2 mini"></p></div>
  </div>
- <div class="surface p-5"><h3 class="t2">Un pensiero per oggi</h3><p class="mt-2 sub">Una pausa per ascoltare il corpo può essere utile quanto una lista di cose da fare.</p></div>
+ <div class="surface p-5"><h3 class="t2">Un pensiero per oggi</h3><p id="home-tip-label" class="mini mt-1"></p>
+       <p id="home-tip" class="mt-2 sub">Una pausa per ascoltare il corpo può essere utile quanto una lista di cose da fare.</p></div>
  <button data-go="premium" type="button" class="primary w-full sm:w-auto">Scopri i percorsi personalizzati</button>
 </section>
 
@@ -144,6 +145,8 @@ header,main{padding-left:calc(20px + env(safe-area-inset-left));padding-right:ca
   <div id="nutrition-totals" class="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-5"></div>
   <div class="bar mt-5" role="progressbar" aria-label="Calorie rispetto all’obiettivo orientativo" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="calorie-bar"><span id="calorie-fill"></span></div>
   <p id="calorie-caption" class="mini mt-2"></p>
+  <div id="macro-bars" class="mt-4 space-y-3"></div>
+  <div id="burn-summary" class="mt-4"></div>
  </div>
  <div class="grid md:grid-cols-2 gap-5">
   <div class="surface p-5 md:p-7">
@@ -220,6 +223,20 @@ header,main{padding-left:calc(20px + env(safe-area-inset-left));padding-right:ca
  </div>
  <div id="workout-list" class="grid md:grid-cols-2 gap-4"></div>
  <div class="surface p-5"><h3 class="t2">Sessioni completate</h3><div id="session-list" class="mini mt-2"></div></div>
+ <div class="surface p-5">
+  <h3 class="t2">Attività e calorie bruciate</h3>
+  <p class="mini mt-1">Scegli un’attività, indica i minuti e aggiungila: le calorie sono una stima che dipende dal tuo peso.</p>
+  <div class="grid grid-cols-2 gap-3 mt-3">
+   <div><label for="act-weight" class="field-label">Il tuo peso (kg)</label><input id="act-weight" class="field" type="number" min="30" max="350" step="any"></div>
+   <div><label for="act-min" class="field-label">Durata (minuti)</label><input id="act-min" class="field" type="number" min="1" max="600" value="30"></div>
+  </div>
+  <div id="act-list" class="mt-4"></div>
+  <p id="act-pick" class="mini mt-3" aria-live="polite">Nessuna attività selezionata.</p>
+  <button id="act-add" class="primary w-full mt-2" type="button">Aggiungi alle attività di oggi</button>
+  <h4 class="font-bold mt-5">Attività di oggi</h4>
+  <div id="act-today" class="mini mt-1"></div>
+  <p class="mini mt-3">Stima con la formula MET × 3,5 × peso (kg) ÷ 200 per minuto, con i valori del Compendium of Physical Activities (arrotondati; le edizioni differiscono leggermente). Non è una misura precisa: dipende da intensità, tecnica e persona.</p>
+ </div>
  <p class="mini">Adatta ogni allenamento alle tue condizioni, capacità e indicazioni sanitarie ricevute.</p>
 </section>
 
@@ -321,7 +338,7 @@ const today=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMon
 const formatDate=s=>new Intl.DateTimeFormat('it-IT',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(s+'T12:00:00Z'));
 const addDays=(s,n)=>{const d=new Date(s+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};
 const number=n=>new Intl.NumberFormat('it-IT',{maximumFractionDigits:1}).format(n);
-const state={foods:[],cycle:[],checkins:[],sessions:[],profile:{},goal:null,records:[],products:{},editing:null};
+const state={foods:[],cycle:[],checkins:[],sessions:[],profile:{},goal:null,records:[],products:{},activities:[],weight:null,editing:null};
 try{const r=JSON.parse(localStorage.getItem(KEY)||"null");if(r)Object.assign(state,r,{editing:null})}catch(e){}
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}};
 const nutrientKeys=['kcal','protein','carbs','fat','fiber'];
@@ -406,11 +423,24 @@ function renderFood(){
  $('calorie-fill').style.width=goal?Math.min(100,t.kcal/goal*100)+'%':'0%';
  $('calorie-bar').setAttribute('aria-valuenow',goal?String(Math.min(100,Math.round(t.kcal/goal*100))):'0');
  $('calorie-caption').textContent=goal?`${number(t.kcal)} kcal registrate · ${number(goal)} kcal come obiettivo orientativo stimato. Non è una prescrizione.`:'Calcola il fabbisogno per visualizzare una barra orientativa; il diario non impone un obiettivo calorico.';
+ const bs=$('burn-summary');bs.replaceChildren();
+ {const burn=state.activities.filter(a=>a.date===date).reduce((x,a)=>x+a.kcal,0);
+  const gr=document.createElement('div');gr.className='grid grid-cols-2 gap-2';
+  [['Calorie registrate',`${number(t.kcal)} kcal`],['Bruciate con le attività',burn?`circa ${number(burn)} kcal`:'nessuna attività']].forEach(([l,v])=>{const c=document.createElement('div');c.className='metric';const sm=document.createElement('div');sm.className='mini';sm.textContent=l;const st=document.createElement('strong');st.textContent=v;c.append(sm,st);gr.append(c)});
+  const nn=document.createElement('p');nn.className='mini mt-2';nn.textContent='Sono due dati separati: non vengono sottratti l’uno dall’altro e il tuo obiettivo non cambia con l’attività svolta.';bs.append(gr,nn);}
+ const mb=$('macro-bars');mb.replaceChildren();
+ if(state.goalMacros){
+  [['Proteine',t.protein,state.goalMacros.p],['Carboidrati',t.carbs,state.goalMacros.c],['Grassi',t.fat,state.goalMacros.g]].forEach(([l,v,tg])=>{
+   const row=document.createElement('div');const top=document.createElement('div');top.className='flex justify-between mini';
+   const a=document.createElement('span');a.textContent=l;const b=document.createElement('span');b.textContent=`${number(v)} / ${number(tg)} g`;top.append(a,b);
+   const bar=document.createElement('div');bar.className='bar mt-1';const sp=document.createElement('span');sp.style.width=Math.min(100,tg?v/tg*100:0)+'%';bar.append(sp);row.append(top,bar);mb.append(row)});
+  const mn=document.createElement('p');mn.className='mini';mn.textContent='Obiettivi in grammi dal calcolo del fabbisogno: sono indicativi, non una prescrizione.';mb.append(mn);
+ }
  const items=state.foods.filter(f=>f.date===date);
- if(!items.length)list.textContent='Nessuna voce per questo giorno.';
- items.forEach(f=>{
+ const MEALS=['Colazione','Spuntino mattutino','Pranzo','Spuntino pomeridiano','Cena','Altri alimenti o bevande'];
+ const buildRow=f=>{
   const row=document.createElement('div');row.className='row flex flex-wrap justify-between items-center gap-3';
-  const info=document.createElement('div');const title=document.createElement('strong');title.textContent=`${f.meal} · ${f.name}`;
+  const info=document.createElement('div');const title=document.createElement('strong');title.textContent=f.name;
   const d=document.createElement('p');d.className='mini';
   d.textContent=`${number(f.quantity)} ${f.unit} · ${val(f.kcal)} kcal · P ${val(f.protein)} · C ${val(f.carbs)} · G ${val(f.fat)} · fibre ${val(f.fiber)} g · ${f.source||'Dati manuali'}${f.barcode?' · '+f.barcode:''}`;
   info.append(title,d);
@@ -419,13 +449,61 @@ function renderFood(){
   ed.onclick=()=>{state.editing=f.id;$('meal').value=f.meal;$('food-name').value=f.name;$('quantity').value=f.quantity;$('unit').value=f.unit;
    nutrientKeys.forEach(k=>$(k+'100').value=f[k]===null?'':(f[k]*100/f.quantity).toFixed(2));
    $('food-name').dataset.barcode=f.barcode||'';$('food-name').dataset.source=f.source||'Dati manuali';
-   previewPortion();$('food-cancel').classList.remove('hidden');$('food-name').focus()};
+   previewPortion();$('food-cancel').classList.remove('hidden');$('food-form').scrollIntoView({behavior:'smooth',block:'start'});$('food-name').focus({preventScroll:true})};
   const del=document.createElement('button');del.className='lilac';del.textContent='Elimina';del.type='button';
   del.onclick=()=>{state.foods=state.foods.filter(x=>x.id!==f.id);renderFood();renderDashboard()};
-  act.append(ed,del);row.append(info,act);list.append(row);
+  act.append(ed,del);row.append(info,act);return row;
+ };
+ MEALS.forEach(meal=>{
+  const its=items.filter(f=>f.meal===meal||(meal===MEALS[5]&&!MEALS.includes(f.meal)));
+  const sec=document.createElement('div');sec.className='py-3';sec.style.borderBottom='1px solid #eeeae7';
+  const head=document.createElement('div');head.className='flex flex-wrap items-center justify-between gap-2';
+  const ht=document.createElement('h4');ht.className='font-bold';ht.textContent=meal;
+  const add=document.createElement('button');add.type='button';add.className='soft';add.textContent='＋ Aggiungi';
+  add.onclick=()=>{$('meal').value=meal;$('food-form').scrollIntoView({behavior:'smooth',block:'start'});$('food-search').focus({preventScroll:true})};
+  head.append(ht,add);sec.append(head);
+  const sm=document.createElement('p');sm.className='mini mt-1';
+  if(its.length){const t=its.reduce((a,f)=>({k:a.k+(f.kcal||0),p:a.p+(f.protein||0),c:a.c+(f.carbs||0),g:a.g+(f.fat||0)}),{k:0,p:0,c:0,g:0});
+   sm.textContent=`Totale: ${number(t.k)} kcal · P ${number(t.p)} · C ${number(t.c)} · G ${number(t.g)}`;sec.append(sm);its.forEach(f=>sec.append(buildRow(f)));
+  }else{sm.textContent='Nessun alimento inserito.';sec.append(sm)}
+  list.append(sec);
  });
  const w=$('week-summary');w.replaceChildren();
- Array.from({length:7},(_,i)=>addDays(date,-i)).forEach(d=>{const p=document.createElement('p');p.className='row';p.textContent=`${formatDate(d)} · ${number(totals(d).kcal)} kcal registrate`;w.append(p)});
+ const days=Array.from({length:7},(_,i)=>addDays(date,-i));
+ const wk=state.foods.filter(f=>days.includes(f.date));
+ const inSlot=(f,m)=>f.meal===m||(m===MEALS[5]&&!MEALS.includes(f.meal));
+ const slotTot=MEALS.map(m=>wk.filter(f=>inSlot(f,m)).reduce((x,f)=>x+(f.kcal||0),0));
+ const weekSum=slotTot.reduce((x,y)=>x+y,0);
+ const hc=document.createElement('p');hc.className='font-bold';hc.textContent='Calorie degli ultimi 7 giorni';w.append(hc);
+ const vals=days.slice().reverse().map(d=>({d,k:totals(d).kcal}));
+ const mx=Math.max(state.goal||0,...vals.map(v=>v.k),1);
+ const ch=document.createElement('div');ch.setAttribute('role','img');ch.setAttribute('aria-label','Grafico delle calorie registrate negli ultimi sette giorni: '+vals.map(v=>formatDate(v.d)+' '+Math.round(v.k)+' kcal').join(', '));
+ ch.style.cssText='position:relative;display:flex;align-items:flex-end;gap:6px;height:140px;margin-top:8px';
+ vals.forEach(v=>{
+  const col=document.createElement('div');col.style.cssText='flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%';
+  const nm=document.createElement('span');nm.className='mini';nm.style.fontSize='10px';nm.textContent=v.k?String(Math.round(v.k)):'';
+  const bar=document.createElement('div');bar.style.cssText='width:100%;border-radius:8px 8px 0 0;background:'+(v.d===date?'#648470':'#9baf9c')+';height:'+(v.k/mx*80)+'%;min-height:'+(v.k?'2px':'0');
+  col.append(nm,bar);ch.append(col);
+ });
+ if(state.goal){const gl=document.createElement('div');gl.style.cssText='position:absolute;left:0;right:0;bottom:'+(state.goal/mx*80)+'%;border-top:2px dashed #8d7aa8';ch.append(gl)}
+ w.append(ch);
+ const lb=document.createElement('div');lb.style.cssText='display:flex;gap:6px;margin-top:4px';
+ vals.forEach(v=>{const x=document.createElement('span');x.className='mini';x.style.cssText='flex:1;text-align:center;font-size:11px';x.textContent=new Intl.DateTimeFormat('it-IT',{weekday:'short',timeZone:'UTC'}).format(new Date(v.d+'T12:00:00Z'));lb.append(x)});
+ w.append(lb);
+ const cn=document.createElement('p');cn.className='mini mt-2';cn.textContent=state.goal?'La linea tratteggiata è il tuo obiettivo calorico orientativo. La barra più scura è il giorno scelto.':'Calcola il fabbisogno per vedere la linea dell’obiettivo. La barra più scura è il giorno scelto.';w.append(cn);
+ const h1=document.createElement('p');h1.className='font-bold mt-4';h1.textContent='Per momento della giornata';w.append(h1);
+ MEALS.forEach((m,i)=>{
+  const r=document.createElement('div');r.className='row';
+  const top=document.createElement('div');top.className='flex flex-wrap justify-between gap-2';
+  const a=document.createElement('span');a.textContent=m;
+  const b=document.createElement('span');b.textContent=`media ${number(slotTot[i]/7)} kcal/giorno · ${number(slotTot[i])} kcal`;
+  top.append(a,b);
+  const bar=document.createElement('div');bar.className='bar mt-2';const sp=document.createElement('span');sp.style.width=(weekSum?slotTot[i]/weekSum*100:0)+'%';bar.append(sp);
+  r.append(top,bar);w.append(r);
+ });
+ const nt=document.createElement('p');nt.className='mini mt-2';nt.textContent='La media è calcolata su 7 giorni, compresi quelli senza voci. La barra mostra la quota di ogni momento sul totale della settimana.';w.append(nt);
+ const h2=document.createElement('p');h2.className='font-bold mt-4';h2.textContent='Per giorno';w.append(h2);
+ days.forEach(d=>{const p=document.createElement('p');p.className='row';const bd=state.activities.filter(a=>a.date===d).reduce((x,a)=>x+a.kcal,0);p.textContent=`${formatDate(d)} · ${number(totals(d).kcal)} kcal registrate`+(bd?` · circa ${number(bd)} kcal bruciate con le attività`:'');w.append(p)});
  save();renderDashboard();
 }
 $('food-date').addEventListener('change',renderFood);
@@ -575,7 +653,7 @@ function renderReports(){
 }
 $('save-report').addEventListener('click',()=>{
  const date=$('food-date').value,t=totals(date),c=state.checkins.find(x=>x.date===date);
- const rec={date,total_calories:t.kcal,calorie_goal:state.goal||0,total_protein:t.protein,total_carbs:t.carbs,total_fat:t.fat,total_fiber:t.fiber,cycle_phase:phase()||'Non disponibile',checkin:c||null,workout_completed:state.sessions.some(s=>s.date===date),workout_name:state.sessions.filter(s=>s.date===date).map(s=>s.name).join(', ')};
+ const rec={date,total_calories:t.kcal,calorie_goal:state.goal||0,total_protein:t.protein,total_carbs:t.carbs,total_fat:t.fat,total_fiber:t.fiber,cycle_phase:phase()||'Non disponibile',checkin:c||null,workout_completed:state.sessions.some(s=>s.date===date),workout_name:state.sessions.filter(s=>s.date===date).map(s=>s.name).join(', '),activity_kcal:state.activities.filter(a=>a.date===date).reduce((x,a)=>x+a.kcal,0)};
  state.records=state.records.filter(r=>r.date!==date);state.records.push(rec);save();renderReports();renderDashboard();
  $('report-status').textContent='Report del '+formatDate(date)+' salvato su questo dispositivo.';
 });
@@ -589,6 +667,7 @@ $('needs-form').addEventListener('submit',ev=>{
  const goal=obj==='loss'?Math.max(Math.round(bmr),Math.round(maintenance*.9)):maintenance;state.goal=goal;
  const pc=obj==='recomp'?[25,45,30]:[20,50,30];
  const g=[Math.round(goal*pc[0]/100/4),Math.round(goal*pc[1]/100/4),Math.round(goal*pc[2]/100/9)];
+ state.goalMacros={p:g[0],c:g[1],g:g[2]};state.weight=weight;$('act-weight').value=weight;
  const out=$('needs-result');out.replaceChildren();
  [['Metabolismo basale stimato',`${Math.round(bmr)} kcal/giorno`],['Fabbisogno giornaliero stimato',`${maintenance} kcal/giorno`],['Obiettivo orientativo',`${goal} kcal/giorno`],['Proteine',`${pc[0]}% · circa ${g[0]} g`],['Carboidrati',`${pc[1]}% · circa ${g[1]} g`],['Grassi',`${pc[2]}% · circa ${g[2]} g`]].forEach(([l,v])=>{const p=document.createElement('p');p.className='row';p.textContent=`${l}: ${v}`;out.append(p)});
  const n=document.createElement('p');n.className='mt-3';n.textContent='Formula Mifflin–St Jeor (variante femminile), moltiplicata per un fattore di attività. Per il dimagrimento si usa una riduzione orientativa del 10%, mai sotto il basale stimato. I risultati non sostituiscono una valutazione professionale.';out.append(n);
@@ -620,13 +699,79 @@ function renderSessions(){
 }
 document.querySelectorAll('[id^="filter-"]').forEach(el=>el.addEventListener('change',renderWorkouts));
 
+/* ATTIVITÀ E CALORIE */
+const ACT=[
+ ["Camminata e corsa",[["Camminata lenta (circa 3 km/h)",2.8],["Camminata (circa 5 km/h)",3.5],["Camminata veloce (circa 6 km/h)",4.3],["Escursionismo",6.0],["Corsa (circa 8 km/h)",8.3],["Corsa (circa 10 km/h)",9.8]]],
+ ["Bicicletta e macchine",[["Bicicletta tranquilla (sotto 16 km/h)",4.0],["Bicicletta moderata (16–19 km/h)",6.8],["Bicicletta sostenuta (19–22 km/h)",8.0],["Cyclette (intensità moderata)",5.8],["Cyclette (intensità alta)",6.8],["Vogatore (moderato)",4.8]]],
+ ["Acqua",[["Nuoto stile libero (ritmo moderato)",5.8],["Nuoto stile libero (ritmo veloce)",9.8]]],
+ ["Forza e corpo libero",[["Pesi (esercizi vari, 8–15 ripetizioni)",3.5],["Pesi (squat e stacchi, sforzo intenso)",5.0],["Corpo libero (moderato)",3.8],["Circuito (sforzo moderato)",4.3],["Video di allenamento cardio-forza (moderato)",4.0]]],
+ ["Mente e corpo",[["Yoga dolce (Hatha)",2.5],["Yoga dinamico (Power)",4.0],["Pilates",3.8],["Stretching e mobilità",2.5]]],
+ ["Danza e sport",[["Ballo da sala (lento)",3.0],["Danza aerobica a basso impatto",5.0],["Ballo generale",7.8],["Salto con la corda (ritmo moderato)",9.0],["Calcio amatoriale",7.0],["Tennis",7.0]]],
+ ["Casa",[["Pulizie di casa (leggere)",2.5]]]
+];
+let actSel=null;
+const actW=()=>Number($('act-weight').value)||state.weight||60;
+const kcalMin=met=>met*3.5*actW()/200;
+function renderActivities(){
+ const box=$('act-list');box.replaceChildren();
+ ACT.forEach(([g,items])=>{
+  const h=document.createElement('p');h.className='font-bold mt-3';h.textContent=g;box.append(h);
+  items.forEach(([name,met])=>{
+   const b=document.createElement('button');b.type='button';b.className='row w-full flex justify-between items-center gap-3 text-left';
+   b.style.background=actSel&&actSel.name===name?'#e3f0e6':'transparent';b.style.borderRadius='10px';b.style.padding='10px 8px';b.style.color='var(--ink)';
+   const a=document.createElement('span');a.textContent=name;
+   const k=document.createElement('strong');k.style.whiteSpace='nowrap';k.textContent='≈ '+number(kcalMin(met))+' kcal/min';
+   b.append(a,k);
+   b.onclick=()=>{actSel={name,met};renderActivities();updateActPick()};
+   box.append(b);
+  });
+ });
+ updateActPick();
+ const today_=state.activities.filter(x=>x.date===today()),el=$('act-today');el.replaceChildren();
+ if(!today_.length)el.textContent='Nessuna attività aggiunta oggi.';
+ else{
+  today_.forEach(x=>{
+   const r=document.createElement('div');r.className='row flex flex-wrap justify-between items-center gap-3';
+   const t=document.createElement('span');t.textContent=`${x.name} · ${x.min} min · circa ${number(x.kcal)} kcal`;
+   const d=document.createElement('button');d.type='button';d.className='lilac';d.textContent='Elimina';
+   d.onclick=()=>{state.activities=state.activities.filter(y=>y.id!==x.id);save();renderActivities();renderFood()};
+   r.append(t,d);el.append(r);
+  });
+  const tot=document.createElement('p');tot.className='mt-2';tot.style.fontWeight='700';tot.textContent='Totale oggi: circa '+number(today_.reduce((a,x)=>a+x.kcal,0))+' kcal';el.append(tot);
+ }
+}
+function updateActPick(){
+ const m=Number($('act-min').value)||0,p=$('act-pick');
+ p.textContent=actSel?`${actSel.name} · ${m} min · circa ${number(kcalMin(actSel.met)*m)} kcal${Number($('act-weight').value)||state.weight?'':' (calcolo con 60 kg: inserisci il tuo peso per una stima più precisa)'}`:'Nessuna attività selezionata.';
+}
+$('act-weight').addEventListener('input',()=>{const v=Number($('act-weight').value);state.weight=v>0?v:null;save();renderActivities()});
+$('act-min').addEventListener('input',updateActPick);
+$('act-add').addEventListener('click',()=>{
+ const m=Number($('act-min').value);
+ if(!actSel)return notify('Scegli prima un’attività dall’elenco.');
+ if(!(m>=1&&m<=600))return notify('Indica una durata tra 1 e 600 minuti.');
+ state.activities.push({id:String(Date.now())+Math.random(),date:today(),name:actSel.name,met:actSel.met,min:m,kcal:Math.round(kcalMin(actSel.met)*m)});
+ save();renderActivities();renderFood();notify('Attività aggiunta alle attività di oggi ✓');
+});
+
 /* HOME E PROFILO */
+/* PENSIERI PER OGGI: una frase al giorno, la stessa per tutto il giorno. Per aggiungerne o cambiarne basta modificare questo elenco. */
+const TIPS=["Oggi basta un piccolo passo: anche quello conta.", "Il tuo corpo ti parla ogni giorno: prova ad ascoltarlo prima di giudicarlo.", "Riposare fa parte del percorso, non è tempo perso.", "Non serve essere perfetta: serve tornare, ogni volta, con gentilezza.", "Muoversi può essere un modo per volersi bene, non per punirsi.", "Un pasto semplice e sereno vale più di mille regole rigide.", "Ogni giornata è diversa, anche l’energia: e va bene così.", "Scegli oggi ciò che ti fa stare bene, non ciò che dovresti fare.", "I progressi non sono sempre visibili: continuano anche quando non li vedi.", "Bevi un bicchiere d’acqua e respira: bastano due minuti per ritrovarti.", "La costanza gentile vale più dell’impegno estremo.", "Non confrontare il tuo primo capitolo con il ventesimo di qualcun’altra.", "Il tuo valore non dipende da quello che mangi o da quanto ti alleni.", "Una camminata all’aria aperta può cambiare il tono di tutta la giornata.", "Se oggi l’energia è poca, scegli un movimento dolce: è comunque una scelta per te.", "Fermarsi ad ascoltare il respiro è già un allenamento.", "Dormire bene è una forma di cura, quanto un buon allenamento.", "Ogni piccolo gesto di cura si somma agli altri.", "Puoi ricominciare in qualsiasi momento della giornata.", "Mangiare con calma è un modo per ascoltare fame e sazietà.", "La forza non è solo nei muscoli: sta anche nel prendersi cura di sé.", "Sii paziente con te stessa: stai costruendo qualcosa che dura.", "Anche i giorni lenti fanno parte del cammino.", "Il corpo cambia nel corso del mese: accompagnarlo è meglio che sfidarlo.", "Oggi onora ciò che il tuo corpo sa fare.", "Concediti uno spazio solo tuo, anche per pochi minuti.", "Respira a fondo, rilassa le spalle: ricomincia da qui.", "Non devi meritarti il riposo.", "Sii la voce gentile che vorresti sentire.", "Il benessere è una somma di abitudini piccole e ripetute.", "Hai già iniziato a prenderti cura di te: continua con calma.", "Prepara qualcosa di buono per te, come faresti per una persona a cui tieni.", "Un allenamento breve fatto con attenzione vale più di uno lungo fatto di fretta.", "Non esiste un modo giusto di sentirsi: c’è solo il tuo, oggi.", "Fai spazio al movimento che ti diverte.", "Ricorda perché hai iniziato e scegli un motivo che ti faccia stare bene.", "La tua storia non è una gara.", "Guardati allo specchio con curiosità invece che con giudizio.", "Ogni ciclo è una nuova occasione per conoscerti meglio.", "Mangiare bene include anche il piacere.", "Accogli la giornata com’è: da lì puoi comunque scegliere qualcosa di buono.", "Una piccola abitudine di oggi sarà una forza di domani.", "Va bene non essere sempre motivata: l’abitudine ti sostiene nei giorni no.", "Prenditi cura del tuo spazio di rinascita, un giorno alla volta.", "Chiedere aiuto quando serve fa parte della forza.", "Ogni passo, anche piccolo, è un passo verso di te.", "Allunga le braccia, apri il petto, respira: il corpo ringrazia.", "Non rimandare la gentilezza: iniziala adesso, con te.", "Oggi scegli un obiettivo piccolo e raggiungibile.", "La disciplina può essere dolce.", "Il movimento è una celebrazione di ciò che il tuo corpo può fare.", "Concediti un momento di silenzio: i pensieri si fanno più chiari.", "Sii orgogliosa di esserti presentata, anche nei giorni difficili.", "Gli equilibri si costruiscono, non si inseguono.", "Un sorriso allo specchio è già un buon inizio.", "Nutriti di cibo buono, di tempo libero, di persone che ti vogliono bene.", "Più ascolti, meno devi forzare.", "Qualunque sia la fase, hai già tutto ciò che serve per cominciare.", "Il tuo ritmo è quello giusto per te.", "Ogni giorno è un invito a prendersi cura di sé."];
+const PHASE_TIPS={"Mestruale": ["Oggi il corpo può chiedere più riposo: ascoltarlo è già prenderti cura di te.", "Una tisana calda, un po’ di calore e un ritmo lento: oggi va bene così.", "Non devi dimostrare niente: oggi il tuo compito è stare comoda.", "Se l’energia è bassa, una camminata lenta o dello stretching possono bastare.", "Dormire un po’ di più oggi non è pigrizia: è ascolto.", "Concediti pasti caldi e semplici che ti facciano stare bene.", "Anche rallentare è un modo di andare avanti.", "Oggi scegli la gentilezza: verso il corpo, verso i tempi, verso le emozioni.", "Respira lentamente: ogni espirazione può sciogliere un po’ di tensione.", "Il tuo ritmo è prezioso anche nei giorni più quieti.", "Se qualcosa ti pesa, puoi lasciarlo a domani: oggi puoi dare la precedenza a te.", "Il riposo di oggi prepara l’energia dei giorni che verranno."], "Follicolare": ["L’energia può tornare a salire: se ti va, è un buon momento per provare qualcosa di nuovo.", "Se hai voglia di iniziare, scegli un piccolo obiettivo e fallo con calma.", "Un allenamento di forza può essere un bel modo per usare la tua grinta, se la senti.", "Curiosità e leggerezza: lasciale guidare le tue scelte di oggi.", "Pianifica con gentilezza: pochi impegni, quelli che ti fanno bene.", "Se hai voglia di muoverti, ascolta come risponde il tuo corpo.", "Prova un nuovo piatto o un nuovo movimento, senza aspettative.", "Le idee nuove sono benvenute: scrivile, anche senza decidere ancora.", "L’entusiasmo cresce a piccoli passi: non bruciare le tappe, goditele.", "Oggi puoi seminare: un’abitudine piccola vale più di una promessa grande.", "Prenditi il tempo di notare cosa ti fa sentire bene in questi giorni.", "Anche nei giorni pieni di energia, il riposo resta un alleato."], "Ovulatoria": ["Può essere un periodo di energia e socialità: condividila con chi ti fa stare bene.", "Muoviti con piacere: riscaldamento e ascolto restano i tuoi migliori alleati.", "Se ti senti in forma, goditi la sensazione senza forzare.", "Lascia spazio alla tua voce: oggi dire ciò che pensi può venirti più facile.", "Pasti colorati, acqua e pause: il corpo apprezza le cure semplici.", "Un po’ di entusiasmo non esclude i momenti di calma: concediti entrambi.", "Sorridi a ciò che sai fare: è il frutto del tuo impegno.", "Anche nei giorni vivaci, ascolta i segnali di stanchezza.", "Se oggi non ti senti così, va benissimo: ogni ciclo e ogni giornata sono diversi.", "Dedica del tempo alle cose che ti accendono.", "Una passeggiata con una persona cara può valere più di un allenamento perfetto.", "Fai ciò che ti fa stare bene, non ciò che ti fa sentire in dovere."], "Luteale": ["Il ritmo può rallentare: scegli attività più dolci e pasti che ti nutrano davvero.", "Se la fame cambia, ascoltala senza giudicarla.", "Una routine serale tranquilla può aiutarti a sentirti più in equilibrio.", "Se le emozioni sono più forti, trattale con gentilezza: passano, come le nuvole.", "Oggi concentrati su ciò che puoi fare, non su ciò che avresti voluto fare.", "Movimento dolce, respiro lento, un po’ di silenzio: può bastare per stare bene.", "Meno cose da fare, più cura di te: va benissimo anche così.", "Un bagno caldo, un libro, un tè: piccoli rituali che sanno di casa.", "Dire dei no oggi può essere un grande atto di cura.", "Non misurare il tuo valore dalla produttività di oggi.", "Il corpo si prepara a qualcosa: dagli il tempo e lo spazio che chiede.", "Se hai bisogno di un po’ di dolcezza, concediti qualcosa che ti faccia stare bene, senza sensi di colpa."]};
+function renderTip(){
+ const [y,m,d]=today().split('-').map(Number);
+ const n=Math.floor(Date.UTC(y,m-1,d)/864e5);
+ const ph=phase(),list=ph&&PHASE_TIPS[ph]?PHASE_TIPS[ph]:TIPS;
+ $('home-tip').textContent=list[((n%list.length)+list.length)%list.length];
+ $('home-tip-label').textContent=ph&&PHASE_TIPS[ph]?`Un pensiero per la tua fase ${ph.toLowerCase()} (è una stima: ogni donna è diversa)`:'';
+}
 function renderDashboard(){
+ renderTip();
  const p=phase();
  $('home-phase').textContent=p?`Fase ${p.toLowerCase()} stimata. Esplora consigli flessibili nella sezione Ciclo.`:'Aggiungi il primo giorno del ciclo per vedere una fase indicativa.';
  const t=totals(today());
  $('home-food-summary').textContent=`${number(t.kcal)} kcal registrate oggi · ${state.foods.filter(f=>f.date===today()).length} voci.`;
- $('home-activity').textContent=`${state.sessions.filter(s=>s.date===today()).length} allenamenti completati oggi.`;
+ {const burn=state.activities.filter(a=>a.date===today()).reduce((x,a)=>x+a.kcal,0);$('home-activity').textContent=`${state.sessions.filter(s=>s.date===today()).length} allenamenti completati oggi.`+(burn?` Circa ${number(burn)} kcal bruciate con le attività.`:'');}
  $('profile-progress').textContent=`${state.cycle.length} date del ciclo · ${state.foods.length} voci alimentari · ${state.sessions.length} allenamenti completati · ${state.records.length} report salvati.`;
 }
 $('profile-form').addEventListener('submit',ev=>{ev.preventDefault();state.profile={name:$('display-name').value.trim(),preference:$('preference').value};save();notify('Preferenze aggiornate.')});
@@ -636,11 +781,11 @@ $('export-session').onclick=()=>{
 };
 $('clear-session').onclick=()=>{
  if(!confirm('Vuoi cancellare tutti i dati salvati su questo dispositivo?'))return;
- Object.assign(state,{foods:[],cycle:[],checkins:[],sessions:[],profile:{},goal:null,records:[],products:{},editing:null});
+ Object.assign(state,{foods:[],cycle:[],checkins:[],sessions:[],profile:{},goal:null,goalMacros:null,records:[],products:{},activities:[],weight:null,editing:null});
  ['profile-form','cycle-form','checkin-form','needs-form','food-form'].forEach(id=>$(id).reset());
  $('cycle-length').value=28;$('period-length').value=5;$('checkin-result').textContent='';
  $('needs-result').textContent='Compila il modulo per vedere una stima orientativa.';
- renderCycle();renderFood();renderWorkouts();renderSessions();renderReports();notify('Tutti i dati sono stati cancellati da questo dispositivo.');
+ renderCycle();renderFood();renderWorkouts();renderSessions();renderReports();actSel=null;$('act-weight').value='';renderActivities();notify('Tutti i dati sono stati cancellati da questo dispositivo.');
 };
 
 /* PREMIUM */
@@ -652,7 +797,8 @@ $('percorsi-button').onclick=()=>PERCORSI_URL?window.open(PERCORSI_URL,'_blank',
 
 /* AVVIO */
 if(state.profile&&state.profile.name)$('display-name').value=state.profile.name;
-renderCycle();renderFood();renderWorkouts();renderSessions();renderReports();previewPortion();
+if(state.weight)$('act-weight').value=state.weight;
+renderCycle();renderFood();renderWorkouts();renderSessions();renderReports();previewPortion();renderActivities();
 if(window.lucide)lucide.createIcons();
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 const urlCode=(new URLSearchParams(location.search).get('barcode')||'').trim();
